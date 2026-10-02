@@ -80,7 +80,9 @@ class TestTheEnvFile:
             config.password_get("12345")
 
     def test_hilan_env_with_a_tilde(self, no_keyring, monkeypatch, tmp_path):
+        # ~ is HOME on macOS and Linux, USERPROFILE on Windows.
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         monkeypatch.setenv("HILAN_ENV", "~/hilan.env")
         config.password_set("12345", "x")
         assert (tmp_path / "hilan.env").exists()
