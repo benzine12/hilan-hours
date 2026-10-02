@@ -1,0 +1,6 @@
+# The source archive carries the tests and the widget, so it can be checked as
+# released — named by pattern, so nothing else dropped into these folders ships.
+recursive-include tests *.py
+include ios/HilanWidget.js
+global-exclude __pycache__
+global-exclude *.py[cod]

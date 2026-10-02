@@ -1,0 +1,46 @@
+[project]
+name = "hilan-hours"
+version = "0.1.0"
+description = "Honest work-hours accounting on top of Hilan attendance data (read-only)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "beautifulsoup4>=4.12",
+    "click>=8.2",
+    "rich>=13.0",
+    "keyring>=25",
+    # Hilan counts in Israel time; Windows and slim Linux images have no
+    # timezone database of their own for zoneinfo to read.
+    "tzdata",
+]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/benzine12/hilan-hours"
+Issues = "https://github.com/benzine12/hilan-hours/issues"
+
+[project.scripts]
+hilan = "hilan.cli:main"
+
+[tool.setuptools]
+packages = ["hilan"]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests", "."]
