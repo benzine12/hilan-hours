@@ -1,5 +1,29 @@
 # hilan-hours
 
+## Contents
+
+- [Overview](#overview)
+- [Install](#install)
+- [Commands](#commands)
+- [Signing in](#signing-in)
+- [The Scriptable widget](#the-scriptable-widget)
+- [Glossary](#glossary)
+- [Notation](#notation)
+- [Hebrew and language](#hebrew-and-language)
+- [How the balance is computed](#how-the-balance-is-computed)
+- [When can I leave today](#when-can-i-leave-today)
+- [History and logs](#history-and-logs)
+- [When the clocks move](#when-the-clocks-move)
+- [Read-only](#read-only)
+- [Hilan API map](#hilan-api-map)
+  - [Login](#login)
+  - [Attendance data](#attendance-data)
+  - [Parsing the page](#parsing-the-page)
+- [Development](#development)
+- [License](#license)
+
+## Overview
+
 An honest count of your hours on top of Hilan.
 
 Hilan's own summary can disagree with the days it shows you. In the example month
@@ -58,27 +82,6 @@ Hilan · September 2026
   WORKED   106.25   recorded this month · 6.33 running
   BANKED    +2.08   right now · 4.75 settled to 21/09
 ```
-
-## Contents
-
-- [Install](#install)
-- [Commands](#commands)
-- [Signing in](#signing-in)
-- [The Scriptable widget](#the-scriptable-widget)
-- [Glossary](#glossary)
-- [Notation](#notation)
-- [Hebrew and language](#hebrew-and-language)
-- [How the balance is computed](#how-the-balance-is-computed)
-- [When can I leave today](#when-can-i-leave-today)
-- [History and logs](#history-and-logs)
-- [When the clocks move](#when-the-clocks-move)
-- [Read-only](#read-only)
-- [Hilan API map](#hilan-api-map)
-  - [Login](#login)
-  - [Attendance data](#attendance-data)
-  - [Parsing the page](#parsing-the-page)
-- [Development](#development)
-- [License](#license)
 
 ## Install
 
