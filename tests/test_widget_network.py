@@ -425,7 +425,7 @@ class TestCookies:
         assert all(c["name"] != "sid" for c in json.loads(result["files"][COOKIES]))
 
     def test_set_cookie_headers_are_split_between_cookies_not_inside_dates(self, tmp_path, september_html):
-        header = "a=1; expires=Wed, 21 Oct 2026 07:28:00 GMT; path=/, b=2; Path=/Hilannetv2; HttpOnly"
+        header = "a=1; expires=Wed, 21 Oct 2037 07:28:00 GMT; path=/, b=2; Path=/Hilannetv2; HttpOnly"
         result = self.run(tmp_path, september_html, [], headers={"Set-Cookie": header})
         stored = json.loads(result["files"][COOKIES])
         assert {"name": "a", "value": "1", "path": "/", "host": HOST} in stored
