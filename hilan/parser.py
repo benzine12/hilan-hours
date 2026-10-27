@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup
 
 from . import clock as hilan_clock
 from .serial import serial_to_date
+from .standard import ELECTION
 
 # Labels Hilan puts in a day's special cell. The same cell doubles as a slot for
 # validation messages, so anything not on this list is treated as an error.
@@ -25,7 +26,10 @@ HOLIDAY_LABELS = {"חג", "חול המועד"}
 EREV_PREFIX = "ערב"
 #: Every label the special cell is known to carry, longest first, so that
 #: "ערב חג" is not taken for "ערב" and a message after it.
-KNOWN_LABELS = ("ערב ראש השנה", 'ערב יוה"כ', "חול המועד", "ערב חג", "חג")
+KNOWN_LABELS = (
+    "ערב ראש השנה", "בחירות לכנסת", "יום הבחירות", "יום בחירות",
+    'ערב יוה"כ', "חול המועד", "ערב חג", "בחירות", "חג",
+)
 
 _GRID_RE = re.compile(r"RG_Days_(\d+)_(\d{4})_(\d{2})_reportsGrid_innerBody")
 _ROW_RE = re.compile(r"_row_(\d+)$")
@@ -158,6 +162,8 @@ def _classify_special(raw: str) -> tuple[str | None, str | None]:
         if text.endswith(" " + label):
             return label, text[:-len(label) - 1]
     if text.startswith(EREV_PREFIX):          # an eve this list has not met
+        return text, None
+    if ELECTION in text:                      # an election day worded otherwise
         return text, None
     return None, text
 

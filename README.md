@@ -241,6 +241,7 @@ Hilan's own words, as they appear on its pages and in this document.
 | `יצרניות` | "Productive" hours, after Hilan's internal rounding |
 | `נתוני שעון מעודכנים` | "Clock data updated to…", how far the punches reach |
 | `חג` / `ערב חג` / `חול המועד` | Holiday / holiday eve / intermediate festival days |
+| `יום בחירות` | Election day, a paid day off; any label with `בחירות` in it |
 | `חופשה` / `מחלה` / `מילואים` | Vacation / sick leave / reserve duty |
 | `שמירה` | Save — the button the read-only guard exists to keep away from |
 
@@ -290,8 +291,8 @@ yet, a future day or one not filled in — and it knows day types no rule of our
 has met. Today's leave forecast uses the same figure.
 
 The rule is the fallback for the rest — weekends and holidays, which carry no
-rows: **Sun–Wed 9h · Thu 8.5h · `ערב חג` 4h · `חג`/Fri/Sat 0 · `חול המועד` like an
-ordinary day.** It reproduces Hilan's own figures for September 2026 exactly —
+rows: **Sun–Wed 9h · Thu 8.5h · `ערב חג` 4h · `חג`/election day (`יום בחירות`)/Fri/Sat 0 ·
+`חול המועד` like an ordinary day.** It reproduces Hilan's own figures for September 2026 exactly —
 `תקן` 173.00 and `תקן עד היום` 119.50 — and is pinned by a golden test.
 
 Any disagreement is reported rather than absorbed, and so is a day whose own rows

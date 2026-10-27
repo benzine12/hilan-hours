@@ -229,7 +229,8 @@ function dailyStandard(year, month, day, special) {
   const weekday = d.getUTCDay(); // 0 is Sunday, 4 is Thu, 5 is Fri, 6 is Sat
   if (weekday === 5 || weekday === 6) return 0;
   if (special) {
-    if (special === "חג") return 0;
+    // Election day is a paid day off, however Hilan words it.
+    if (special === "חג" || special.includes("בחירות")) return 0;
     if (special.startsWith("ערב")) return 4.0;
   }
   return weekday === 4 ? 8.5 : 9.0;
@@ -853,7 +854,8 @@ function parseAndAnalyse(html, nowObj = israelNow()) {
     let special = null;
     let error = null;
     if (rawSpecial) {
-      const labels = ["ערב ראש השנה", 'ערב יוה"כ', "חול המועד", "ערב חג", "חג"];
+      const labels = ["ערב ראש השנה", "בחירות לכנסת", "יום הבחירות", "יום בחירות",
+        'ערב יוה"כ', "חול המועד", "ערב חג", "בחירות", "חג"];
       const found = labels.find(l => rawSpecial === l || rawSpecial.startsWith(l + " ") || rawSpecial.endsWith(" " + l));
       if (found) {
         special = found;
@@ -861,7 +863,7 @@ function parseAndAnalyse(html, nowObj = israelNow()) {
           : rawSpecial.startsWith(found + " ") ? rawSpecial.slice(found.length + 1)
           : rawSpecial.slice(0, rawSpecial.length - found.length - 1);
         error = rest || null;
-      } else if (rawSpecial.startsWith("ערב")) {
+      } else if (rawSpecial.startsWith("ערב") || rawSpecial.includes("בחירות")) {
         special = rawSpecial;
       } else {
         error = rawSpecial;

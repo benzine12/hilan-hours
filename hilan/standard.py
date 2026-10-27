@@ -16,6 +16,9 @@ from typing import Mapping
 HOLIDAY = "חג"
 EREV_CHAG = "ערב חג"
 CHOL_HAMOED = "חול המועד"
+#: Election day is a paid day off by law. Hilan's wording varies ("יום בחירות",
+#: "יום הבחירות", "בחירות לכנסת"), and every form carries this word.
+ELECTION = "בחירות"
 
 FULL_DAY = timedelta(hours=9)
 SHORT_DAY = timedelta(hours=8, minutes=30)  # Thursday
@@ -29,18 +32,24 @@ def _is_erev(special: str) -> bool:
     return special.startswith("ערב")
 
 
+def is_election(special: str) -> bool:
+    """Any election-day label: a day off, like a holiday."""
+    return ELECTION in special
+
+
 def daily_standard(day: date, special: str | None) -> timedelta:
     """Required hours for one day.
 
     Precedence matters: the weekend wins over a holiday label (an ערב חג that
-    lands on a Friday is still simply a day off), a full holiday zeroes the
-    day, an eve is a half day, and חול המועד is an ordinary workday.
+    lands on a Friday is still simply a day off), a full holiday or election
+    day zeroes the day, an eve is a half day, and חול המועד is an ordinary
+    workday.
     """
     weekday = day.isoweekday()
     if weekday in (_FRIDAY, _SATURDAY):
         return timedelta(0)
     if special:
-        if special == HOLIDAY:
+        if special == HOLIDAY or is_election(special):
             return timedelta(0)
         if _is_erev(special):
             return EREV_DAY

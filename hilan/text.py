@@ -38,6 +38,10 @@ SPECIALS = {
     "חול המועד": "mid-festival",
     'ערב יוה"כ': "Yom Kippur eve",
     "ערב ראש השנה": "Rosh Hashanah eve",
+    "יום בחירות": "election day",
+    "יום הבחירות": "election day",
+    "בחירות": "election day",
+    "בחירות לכנסת": "Knesset election day",
     "שבת": "Saturday",
 }
 
