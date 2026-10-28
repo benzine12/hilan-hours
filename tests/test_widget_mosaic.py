@@ -43,6 +43,19 @@ class TestEverySize:
         assert len(images) == 1 and images[0]["paths"] > 0
 
 
+class TestItFitsAnyPhone:
+    """A widget is 292 points wide on one phone and 364 on another.
+
+    An image given a fixed size wider than the widget it lands in pushes the
+    whole column out past the widget's edges; one left to fit scales to it.
+    """
+
+    @pytest.mark.parametrize("family", ["small", "medium", "large", "extraLarge", "accessoryRectangular"])
+    def test_no_image_is_given_a_size_of_its_own(self, tmp_path, september_html, family):
+        placed = show(tmp_path, september_html, family)["placed"]
+        assert placed and all("imageSize" not in p and p.get("resizable") is not False for p in placed), placed
+
+
 class TestTheWeek:
     """The medium widget: 20-26 September, with today on the Tuesday."""
 

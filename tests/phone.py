@@ -23,7 +23,8 @@ A scenario is a dict:
     call        "run" (default) or ["fetchMonth", year, month]
     requestSeconds  how long each request takes on the fake clock
 
-What comes back: requests, texts, images, spoken, output, alerts, keychain,
+What comes back: requests, texts, images, placed (what the widget set on each
+image it placed: imageSize, resizable), spoken, output, alerts, keychain,
 files, refreshAfter, error, problems (what the drawing fakes in scriptable.py
 caught), and for a fetchMonth call, the page it returned.
 """
@@ -56,7 +57,7 @@ class FixedDate extends Date {
   static now() { return instant; }
 }
 
-const seen = { requests: [], texts: [], images: [], spoken: [], output: null, alerts: [], refreshAfter: null };
+const seen = { requests: [], texts: [], images: [], placed: [], spoken: [], output: null, alerts: [], refreshAfter: null };
 const files = { ...(spec.files || {}) };
 const keychain = { ...(spec.keychain || {}) };
 const served = new Map();
@@ -106,7 +107,7 @@ class Widget {
   setPadding() {} addSpacer() {} layoutHorizontally() {} layoutVertically() {}
   addText(t) { seen.texts.push(t); return {}; }
   addStack() { return new Widget(); }
-  addImage(image) { seen.images.push(image); return {}; }
+  addImage(image) { seen.images.push(image); const shown = {}; seen.placed.push(shown); return shown; }
   presentMedium() { return Promise.resolve(); }
 }
 

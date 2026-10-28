@@ -1526,7 +1526,7 @@ function monthImage(analysis, theme, width, height, { gap, radius, detailed }) {
     write(ctx, String(tile.day), x + 5, y + 3, tileWidth - 8, 13, 10, look.ink, { bold: true });
     drawStrip(ctx, analysis, tile, theme, x + 4, y + tileHeight - 10, tileWidth - 8, 5);
   });
-  return { image: ctx.getImage(), width, height };
+  return ctx.getImage();
 }
 
 // 06:00 to 21:00 across the tile; today runs from its clock-in to now, and on,
@@ -1572,7 +1572,7 @@ function weekImage(analysis, theme, width, height) {
     write(ctx, value, x, height - 32, tileWidth, 14, 11, look.ink, { bold: true, align: "center" });
     write(ctx, tag, x, height - 17, tileWidth, 11, 8, look.ink, { bold: true, align: "center" });
   });
-  return { image: ctx.getImage(), width, height };
+  return ctx.getImage();
 }
 
 function weekLabels(tile, analysis) {
@@ -1612,6 +1612,16 @@ function lockRingImage(analysis, size) {
              lockLook(tile.kind), null, progress);
   });
   return ctx.getImage();
+}
+
+// Drawn at the size of the largest phone's widget and left to fit the one it
+// lands in: widgets are 292 points wide on one phone and 364 on another, and an
+// image held at a fixed size wider than its widget pushes the whole column past
+// the widget's edges.
+function addFitted(stack, image) {
+  const shown = stack.addImage(image);
+  shown.resizable = true;
+  return shown;
 }
 
 function addLine(stack, text, size, color, bold = false) {
@@ -1671,8 +1681,7 @@ function createWidget(analysis, family, theme = widgetTheme()) {
     title.font = Font.boldSystemFont(14);
     if (mosaic) {
       widget.addSpacer(3);
-      const strip = widget.addImage(lockWeekImage(analysis, 150, 14));
-      strip.imageSize = new Size(150, 14);
+      addFitted(widget, lockWeekImage(analysis, 150, 14));
       widget.addSpacer(3);
     }
     // Three lines fit; an old figure's marker takes one, and its leave time is old too.
@@ -1695,8 +1704,7 @@ function createWidget(analysis, family, theme = widgetTheme()) {
     addLine(head, MONTHS[analysis.month - 1].slice(0, 3).toUpperCase(), 10, t.muted, true);
     widget.addSpacer(6);
     if (mosaic) {
-      const { image, width, height } = monthImage(analysis, theme, 142, 64, { gap: 3, radius: 3, detailed: false });
-      widget.addImage(image).imageSize = new Size(width, height);
+      addFitted(widget, monthImage(analysis, theme, 142, 64, { gap: 3, radius: 3, detailed: false }));
     }
     widget.addSpacer();
     // An old figure's marker takes the footer's line: there is no room for both.
@@ -1722,8 +1730,7 @@ function createWidget(analysis, family, theme = widgetTheme()) {
     addLine(head, live, 15, liveColor, true);
     widget.addSpacer(8);
     if (mosaic) {
-      const { image, width, height } = weekImage(analysis, theme, 332, 84);
-      widget.addImage(image).imageSize = new Size(width, height);
+      addFitted(widget, weekImage(analysis, theme, 332, 84));
     }
     widget.addSpacer();
     const foot = widget.addStack();
@@ -1749,8 +1756,7 @@ function createWidget(analysis, family, theme = widgetTheme()) {
   addLine(now, live, 24, liveColor, true);
   widget.addSpacer(10);
   if (mosaic) {
-    const { image, width, height } = monthImage(analysis, theme, 332, 230, { gap: 6, radius: 9, detailed: true });
-    widget.addImage(image).imageSize = new Size(width, height);
+    addFitted(widget, monthImage(analysis, theme, 332, 230, { gap: 6, radius: 9, detailed: true }));
     widget.addSpacer(4);
     addLine(widget, "each strip runs 06:00 → 21:00", 10, t.faint);
   }
