@@ -16,17 +16,20 @@ from pathlib import Path
 
 import pytest
 
+from scriptable import DRAWING
+
 ROOT = Path(__file__).resolve().parent.parent
 WIDGET = ROOT / "ios" / "HilanWidget.js"
 
 RUNNER = r"""
 const fs = require('fs'), vm = require('vm');
+/*DRAWING*/
 const [widgetPath, htmlPath, mode] = process.argv.slice(1);
 const code = fs.readFileSync(widgetPath, 'utf-8').replace(/^await run\(\);\s*$/m, '')
   .replace(/^const BASE_URL = .*$/m, 'const BASE_URL = "https://example.net.hilan.co.il";');
 const texts = []; let output = null, cached = null;
 class W { constructor() { this.url = ''; } setPadding() {} addText(t) { texts.push(t); return {}; }
-  addStack() { return new W(); } addSpacer() {} layoutHorizontally() {} layoutVertically() {}
+  addStack() { return new W(); } addImage() { return {}; } addSpacer() {} layoutHorizontally() {} layoutVertically() {}
   presentMedium() { return Promise.resolve(); } }
 const ctx = { console: { log() {}, error() {} },
   config: mode === 'widget' ? { runsInWidget: true, runsInApp: false, widgetFamily: 'medium' }
@@ -44,7 +47,7 @@ const ctx = { console: { log() {}, error() {} },
     loadString() { return Promise.reject(new Error('The network connection was lost.')); } },
   Alert: class { addAction() {} presentAlert() { return Promise.resolve(0); } },
   ListWidget: W, Font: { systemFont: s => s, boldSystemFont: s => s },
-  Color: class { static gray() { return new this(); } static white() { return new this(); } },
+  ...drawing.classes,
 };
 vm.createContext(ctx);
 vm.runInContext(code, ctx);
@@ -52,8 +55,9 @@ vm.runInContext(code, ctx);
 const savedAt = new Date("2026-09-22T11:02:00Z");
 cached = { ...ctx.parseAndAnalyse(fs.readFileSync(htmlPath, 'utf-8'), ctx.israelNow(savedAt)),
            cachedAt: savedAt.toISOString() };
-ctx.run().then(() => process.stdout.write(JSON.stringify({ texts, output })));
+ctx.run().then(() => process.stdout.write(JSON.stringify({ texts, output, problems: drawing.problems })));
 """
+RUNNER = RUNNER.replace("/*DRAWING*/", DRAWING)
 
 # Found once, by full path: on Windows a bare "node" is not always resolved.
 NODE = shutil.which("node")

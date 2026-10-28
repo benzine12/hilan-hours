@@ -186,6 +186,25 @@ answers Siri through a Shortcut's "Run Script" action.
    size works: small, medium, large and extra large on the home screen; inline,
    rectangular and circular on the lock screen.
 
+It draws the month as a mosaic of days, each tile coloured by what the day came
+to: blue for a day made, brighter the further ahead it ended; orange for one
+short; striped for leave; a dashed purple outline for a holiday or election
+day; dashed grey for a working day still to come. Today fills from the bottom
+as its hours run. A day Hilan's clock has not reached yet is outlined in blue
+rather than shown short, for the same reason BANKED leaves it out.
+
+- **Small**: the month, NOW above it, and when you can leave.
+- **Medium**: this week, a tile a day, with the hours worked and what each
+  came to.
+- **Large** and **extra large**: the month with the days numbered, and in each
+  tile a strip from 06:00 to 21:00 marking when you worked.
+- **Lock screen**: this week's tiles in a row (rectangular) or round the edge
+  (circular), with the balance; inline is the balance alone.
+
+It is dark by default. Type `light` as the widget's parameter (long-press the
+widget, Edit Widget, Parameter) for the light version: Scriptable does not tell
+a widget which appearance iOS is in.
+
 When Hilan cannot be reached it shows the last good figure marked
 `as of HH:MM`, never passed off as current, and asks iOS for a fresh one
 within a quarter of an hour. Asked through Siri, it says what went wrong.
@@ -211,7 +230,12 @@ actually ships:
   `toSpoken` in one Node process and compares every figure it shows, and what it
   gives Siri, with Python: both made-up months at every hour, 150 random months
   full of edge cases (a fixed seed, so a failure replays), and a page carrying
-  two months.
+  two months. Every tile of the mosaic is compared too: its kind, as
+  `Analysis.kind` gives it, and the day's balance.
+- `tests/test_widget_mosaic.py` draws every size in both themes with a strict
+  stand-in for Scriptable's drawing (`tests/scriptable.py`): a colour that is
+  not one, a coordinate that is not a number, or anything drawn outside its
+  canvas fails it.
 - `tests/test_widget_stale.py` runs its `run()` with the network failing and
   checks a cached figure is marked with the time it was true, on the home
   screen, the lock screen and in what Siri is handed.

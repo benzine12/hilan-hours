@@ -17,13 +17,15 @@ A scenario is a dict:
     keychain    what the Keychain holds to begin with
     files       documents already saved, by file name
     config      Scriptable's ``config`` (where the script is running)
+    parameter   the widget's parameter, as typed in Edit Widget
     now         the instant it is, as an ISO string
     alert       {choice, fields} — what the person does with an alert
     call        "run" (default) or ["fetchMonth", year, month]
     requestSeconds  how long each request takes on the fake clock
 
-What comes back: requests, texts, spoken, output, alerts, keychain, files,
-refreshAfter, error, and for a fetchMonth call, the page it returned.
+What comes back: requests, texts, images, spoken, output, alerts, keychain,
+files, refreshAfter, error, problems (what the drawing fakes in scriptable.py
+caught), and for a fetchMonth call, the page it returned.
 """
 from __future__ import annotations
 
@@ -33,12 +35,15 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from scriptable import DRAWING
+
 WIDGET = Path(__file__).resolve().parent.parent / "ios" / "HilanWidget.js"
 SITE = "https://example.net.hilan.co.il"
 NODE = shutil.which("node")
 
 RUNNER = r"""
 const fs = require('fs'), vm = require('vm');
+/*DRAWING*/
 const [widgetPath, scenarioPath] = process.argv.slice(1);
 const spec = JSON.parse(fs.readFileSync(scenarioPath, 'utf-8'));
 const code = fs.readFileSync(widgetPath, 'utf-8').replace(/^await run\(\);\s*$/m, '')
@@ -51,7 +56,7 @@ class FixedDate extends Date {
   static now() { return instant; }
 }
 
-const seen = { requests: [], texts: [], spoken: [], output: null, alerts: [], refreshAfter: null };
+const seen = { requests: [], texts: [], images: [], spoken: [], output: null, alerts: [], refreshAfter: null };
 const files = { ...(spec.files || {}) };
 const keychain = { ...(spec.keychain || {}) };
 const served = new Map();
@@ -101,6 +106,7 @@ class Widget {
   setPadding() {} addSpacer() {} layoutHorizontally() {} layoutVertically() {}
   addText(t) { seen.texts.push(t); return {}; }
   addStack() { return new Widget(); }
+  addImage(image) { seen.images.push(image); return {}; }
   presentMedium() { return Promise.resolve(); }
 }
 
@@ -120,6 +126,8 @@ const ctx = {
   console: { log() {}, error() {} },
   Date: FixedDate,
   config: spec.config || { runsInWidget: true, runsInApp: false, widgetFamily: 'medium' },
+  // What the person typed as the widget's parameter, as Scriptable passes it.
+  args: { widgetParameter: spec.parameter == null ? null : spec.parameter },
   FileManager: { local: () => ({
     documentsDirectory: () => docs,
     joinPath: (a, b) => a + '/' + b,
@@ -137,7 +145,7 @@ const ctx = {
   Speech: { speak(s) { return new Promise(done => setTimeout(() => { seen.spoken.push(s); done(); }, 5)); } },
   Request, Alert, ListWidget: Widget,
   Font: { systemFont: s => s, boldSystemFont: s => s },
-  Color: class { static gray() { return new this(); } static white() { return new this(); } },
+  ...drawing.classes,
 };
 vm.createContext(ctx);
 vm.runInContext(code + '\nglobalThis.__Client = HilanClient;', ctx);
@@ -153,11 +161,12 @@ async function main() {
   } catch (e) {
     error = { name: e.name, message: e.message };
   }
-  const out = { ...seen, keychain, files, page, error };
+  const out = { ...seen, keychain, files, page, error, problems: drawing.problems };
   process.stdout.write(JSON.stringify(out));
 }
 main();
 """
+RUNNER = RUNNER.replace("/*DRAWING*/", DRAWING)
 
 
 def phone(tmp_path: Path, scenario: dict, *, tz: str = "Asia/Jerusalem") -> dict:

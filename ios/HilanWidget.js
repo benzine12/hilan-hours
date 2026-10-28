@@ -3,9 +3,10 @@
 // icon-color: blue; icon-glyph: clock;
 
 /**
- * Hilan Hours for Scriptable (iOS): the live and banked balance on the home
- * screen and lock screen, in every widget size, and in one sentence for Siri
- * through a Shortcut's "Run Script" action. No Mac needs to be running.
+ * Hilan Hours for Scriptable (iOS): the live and banked balance, and the month
+ * as a mosaic of days, on the home screen and lock screen in every widget size,
+ * and in one sentence for Siri through a Shortcut's "Run Script" action. No Mac
+ * needs to be running. "light" as the widget's parameter draws it light.
  *
  * It is the command line's calculation again, in JavaScript, and the tests
  * hold the two to the same numbers. It only ever reads: the same guard as the
@@ -224,16 +225,35 @@ function selectedDaysField(year, month) {
   return res.join(',');
 }
 
+// A label that makes a weekday a day off: חג, or election day however Hilan
+// words it — standard.py's is_holiday.
+function isHoliday(special) {
+  return Boolean(special) && (special === "חג" || special.includes("בחירות"));
+}
+
 function dailyStandard(year, month, day, special) {
   const d = new Date(Date.UTC(year, month - 1, day));
   const weekday = d.getUTCDay(); // 0 is Sunday, 4 is Thu, 5 is Fri, 6 is Sat
   if (weekday === 5 || weekday === 6) return 0;
   if (special) {
-    // Election day is a paid day off, however Hilan words it.
-    if (special === "חג" || special.includes("בחירות")) return 0;
+    if (isHoliday(special)) return 0;
     if (special.startsWith("ערב")) return 4.0;
   }
   return weekday === 4 ? 8.5 : 9.0;
+}
+
+// What sort of day this is, the colour of its tile — calc.py's Analysis.kind.
+// A day not yet settled is pending rather than short: its punches may not have
+// arrived, and a tile must not show a deficit the balance does not count.
+function dayKind(day, todayIso, settledThrough) {
+  const worked = day.workedMinutes, credited = day.creditedMinutes, standard = day.standardMinutes;
+  if (day.date > todayIso) return isHoliday(day.special) ? "holiday" : standard > 0 ? "ahead" : "off";
+  if (day.date === todayIso) return "today";
+  if (day.date > settledThrough) return "pending";
+  if (worked === 0 && credited === 0 && standard === 0) return isHoliday(day.special) ? "holiday" : "off";
+  if (worked + credited - standard < 0) return "short";
+  if (worked === 0 && credited > 0) return "leave";
+  return "met";
 }
 
 // Hours as whole minutes, half a minute rounded away from zero like calc.py's
@@ -1026,6 +1046,7 @@ function parseAndAnalyse(html, nowObj = israelNow()) {
 
     return {
       date: d.date,
+      special: d.special,
       workedMinutes: workedMin,
       workedHours: roundHours(workedMin),
       creditedMinutes: creditedMin,
@@ -1117,13 +1138,45 @@ function parseAndAnalyse(html, nowObj = israelNow()) {
   // none is offered.
   const todayRemainingMin = Math.max(0, todayStandardMin - todayWorkedSoFarMin - todayCreditedMin);
   const doneForToday = todayRemainingMin === 0;
+  let leaveMin = null;
   if (todayOpenEntry && !doneForToday) {
     const neededFromNowMin = Math.max(0, todayStandardMin - todayClosedMin - todayCreditedMin);
     const leaveTotalMin = (todayOpenEntry.hour * 60 + todayOpenEntry.minute + neededFromNowMin) % (24 * 60);
     const lh = Math.floor(leaveTotalMin / 60);
     const lm = leaveTotalMin % 60;
     leaveToCloseStr = `${String(lh).padStart(2, '0')}:${String(lm).padStart(2, '0')}`;
+    leaveMin = leaveTotalMin;
   }
+
+  // The mosaic: every day of the month as a tile, with the sessions worked on
+  // it for the large widget's strips. A day the page has no row for is
+  // "unknown" until it comes, since nothing on the page says what it holds.
+  const calcByDate = new Map(daysCalc.map(d => [d.date, d]));
+  const recordByDate = new Map(days.map(d => [d.date, d]));
+  const tiles = [];
+  for (let dom = 1; dom <= lastDom; dom++) {
+    const iso = `${year}-${String(month).padStart(2, '0')}-${String(dom).padStart(2, '0')}`;
+    const c = calcByDate.get(iso);
+    if (!c) {
+      const special = specialsMap.get(iso) || null;
+      const ruleMin = minutesOf(dailyStandard(year, month, dom, special));
+      tiles.push({ date: iso, day: dom, listed: false, workedMinutes: 0, creditedMinutes: 0,
+                   standardMinutes: ruleMin, balanceMinutes: 0, balance: "0.00", spans: [],
+                   kind: iso > todayIso ? dayKind({ date: iso, special, standardMinutes: ruleMin }, todayIso, settledThrough)
+                                        : "unknown" });
+      continue;
+    }
+    const balanceMin = c.workedMinutes + c.creditedMinutes - c.standardMinutes;
+    tiles.push({
+      date: iso, day: dom, listed: true, kind: dayKind(c, todayIso, settledThrough),
+      workedMinutes: c.workedMinutes, creditedMinutes: c.creditedMinutes,
+      standardMinutes: c.standardMinutes, balanceMinutes: balanceMin,
+      balance: roundHours(balanceMin).toFixed(2),
+      // A session past midnight is drawn to the end of its day.
+      spans: closedSpans(recordByDate.get(iso)).map(([a, b]) => [a, b < a ? 1440 : b]),
+    });
+  }
+  const todayDow = new Date(Date.UTC(nowObj.getFullYear(), nowObj.getMonth(), nowObj.getDate())).getUTCDay();
 
   return {
     year,
@@ -1159,6 +1212,18 @@ function parseAndAnalyse(html, nowObj = israelNow()) {
       entry: todayOpenEntry ? todayOpenEntry.str : null,
       done: doneForToday,
       present: Boolean(todayRecord),
+      standardMin: todayStandardMin,
+      creditedMin: todayCreditedMin,
+      entryMin: todayOpenEntry ? toMin(todayOpenEntry) : null,
+      nowMin: nowMinOfDay,
+      leaveMin,
+    },
+    mosaic: {
+      // The weekday of the 1st, Sunday first, as the Israeli week runs.
+      lead: new Date(Date.UTC(year, month - 1, 1)).getUTCDay(),
+      tiles,
+      // This week, Sunday to Saturday; days of another month have no tile here.
+      week: Array.from({ length: 7 }, (_, i) => isoMinusDays(todayIso, todayDow - i)),
     },
   };
 }
@@ -1252,211 +1317,453 @@ function toSpoken(analysis) {
 }
 
 // --- WidgetKit UI Rendering ---
-function createWidget(analysis, family) {
+// The month as a mosaic of days: each tile coloured by what the day came to
+// (dayKind), today filling from the bottom as its hours run. Small shows the
+// month, medium this week, large the month with the hours each day was worked.
+
+const THEMES = {
+  dark: {
+    background: "#121417", text: "#F2F3F5", muted: "#A0A4AB", faint: "#8D9199",
+    accent: "#4C9DFF", tile: "#4C9DFF", short: "#FFB340", off: "#1C1F24",
+    holiday: "#BF8CFF", holidayInk: "#D5B8FF", ahead: "#3A3E45", todayBack: "#16181C",
+    hatch: ["#4B5363", "#8E9AAF"], inkOnBright: "#06121F", inkOnShort: "#1A1206",
+    // Alpha of a met day's tile: the floor, and what a surplus of 2.25 adds.
+    met: [0.3, 0.65], soft: [0.12, 0.28], brightAt: 0.7,
+    shortMild: 0.75, shortSoft: 0.16, progress: 0.35, track: ["#FFFFFF", 0.1],
+  },
+  light: {
+    background: "#F5F6F8", text: "#14161A", muted: "#5B616B", faint: "#6B7280",
+    accent: "#1D4ED8", tile: "#2563EB", short: "#F59E0B", off: "#E9EBEF",
+    holiday: "#7C3AED", holidayInk: "#6D28D9", ahead: "#C3C8D0", todayBack: "#FFFFFF",
+    hatch: ["#E2E6EB", "#AEB6C2"], inkOnBright: "#FFFFFF", inkOnShort: "#3A2400",
+    met: [0.18, 0.72], soft: [0.1, 0.25], brightAt: 0.85,
+    shortMild: 0.55, shortSoft: 0.2, progress: 0.18, track: ["#14161A", 0.08],
+  },
+};
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+                "August", "September", "October", "November", "December"];
+const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+// "light" as the widget's parameter (long-press › Edit Widget › Parameter)
+// draws it light. Scriptable does not tell a widget which appearance iOS is in.
+function widgetTheme() {
+  const param = typeof args !== "undefined" && args ? args.widgetParameter : "";
+  return String(param || "").trim().toLowerCase() === "light" ? "light" : "dark";
+}
+
+// How a tile is drawn, as plain data: [hex, alpha] pairs, so it can be checked
+// without drawing. `soft` is the large widget's quieter fill, which leaves the
+// colour to the strip of hours inside it.
+function tileLook(tile, theme, soft = false) {
+  const t = THEMES[theme];
+  const look = { fill: null, border: null, dashed: false, hatch: false, ink: t.text, progress: null };
+  switch (tile.kind) {
+    case "met": {
+      const lift = Math.min(1, Math.max(0, tile.balanceMinutes) / 135);
+      const [floor, span] = soft ? t.soft : t.met;
+      look.fill = [t.tile, floor + lift * span];
+      if (!soft && floor + lift * span > t.brightAt) look.ink = t.inkOnBright;
+      break;
+    }
+    case "short":
+      look.fill = [t.short, soft ? t.shortSoft : tile.balanceMinutes < -60 ? 1 : t.shortMild];
+      if (!soft) look.ink = t.inkOnShort;
+      break;
+    case "leave": look.hatch = true; break;
+    case "holiday": look.border = [t.holiday, 1]; look.dashed = true; look.ink = t.holidayInk; break;
+    case "off": look.fill = [t.off, 1]; look.ink = t.faint; break;
+    case "today": look.fill = [t.todayBack, 1]; look.border = [t.accent, 1]; look.progress = [t.tile, t.progress]; break;
+    case "pending": look.fill = [t.off, 1]; look.border = [t.accent, 1]; look.dashed = true; break;
+    default: look.border = [t.ahead, 1]; look.dashed = true; look.ink = t.faint;   // ahead, unknown
+  }
+  return look;
+}
+
+// The lock screen draws in one tint, so its tiles differ by fill and outline.
+function lockLook(kind) {
+  const white = alpha => ["#FFFFFF", alpha];
+  switch (kind) {
+    case "met": return { fill: white(0.55) };
+    case "short": return { fill: white(0.2), border: white(1) };
+    case "leave": return { hatch: true };
+    case "holiday": return { border: white(0.8), dashed: true };
+    case "off": return { fill: white(0.12) };
+    case "today": return { border: white(1), progress: white(1) };
+    case "pending": return { fill: white(0.12), border: white(0.55), dashed: true };
+    default: return { border: white(0.35), dashed: true };
+  }
+}
+
+// Today's share of its requirement, for the fill rising in its tile.
+function todayProgress(analysis) {
+  const t = analysis.today;
+  if (!t.standardMin) return 1;
+  return Math.max(0, Math.min(1, (t.workedSoFarMin + (t.creditedMin || 0)) / t.standardMin));
+}
+
+function paint([hex, alpha]) {
+  return new Color(hex, alpha);
+}
+
+function canvas(width, height) {
+  const ctx = new DrawContext();
+  ctx.size = new Size(width, height);
+  ctx.opaque = false;
+  ctx.respectScreenScale = true;
+  return ctx;
+}
+
+function fillRound(ctx, x, y, w, h, radius, color) {
+  const path = new Path();
+  path.addRoundedRect(new Rect(x, y, w, h), radius, radius);
+  ctx.addPath(path);
+  ctx.setFillColor(color);
+  ctx.fillPath();
+}
+
+function strokeRound(ctx, x, y, w, h, radius, color, width) {
+  const i = width / 2;
+  const path = new Path();
+  path.addRoundedRect(new Rect(x + i, y + i, w - width, h - width), radius, radius);
+  ctx.addPath(path);
+  ctx.setStrokeColor(color);
+  ctx.setLineWidth(width);
+  ctx.strokePath();
+}
+
+// Drawing has no dash pattern: the dashes are laid along the four sides.
+function dashedRound(ctx, x, y, w, h, radius, color, width) {
+  const path = new Path();
+  const i = width / 2, dash = 3, gap = 3;
+  const side = (x0, y0, x1, y1) => {
+    const length = Math.hypot(x1 - x0, y1 - y0);
+    for (let at = 0; at < length; at += dash + gap) {
+      const end = Math.min(length, at + dash);
+      path.move(new Point(x0 + (x1 - x0) * at / length, y0 + (y1 - y0) * at / length));
+      path.addLine(new Point(x0 + (x1 - x0) * end / length, y0 + (y1 - y0) * end / length));
+    }
+  };
+  side(x + radius, y + i, x + w - radius, y + i);
+  side(x + w - i, y + radius, x + w - i, y + h - radius);
+  side(x + w - radius, y + h - i, x + radius, y + h - i);
+  side(x + i, y + h - radius, x + i, y + radius);
+  ctx.addPath(path);
+  ctx.setStrokeColor(color);
+  ctx.setLineWidth(width);
+  ctx.strokePath();
+}
+
+// Diagonal stripes, kept inside the box: leave, which is time off rather than work.
+function hatch(ctx, x, y, w, h, color, step = 4) {
+  const path = new Path();
+  for (let k = step; k < w + h; k += step) {
+    const u0 = Math.max(0, k - h), u1 = Math.min(w, k);
+    path.move(new Point(x + u0, y + k - u0));
+    path.addLine(new Point(x + u1, y + k - u1));
+  }
+  ctx.addPath(path);
+  ctx.setStrokeColor(color);
+  ctx.setLineWidth(1.5);
+  ctx.strokePath();
+}
+
+function drawTile(ctx, x, y, w, h, radius, look, theme, progress = 0) {
+  if (look.fill) fillRound(ctx, x, y, w, h, radius, paint(look.fill));
+  if (look.hatch) {
+    const [back, line] = theme ? THEMES[theme].hatch : ["#FFFFFF", "#FFFFFF"];
+    fillRound(ctx, x, y, w, h, radius, theme ? new Color(back) : new Color(back, 0.12));
+    hatch(ctx, x + 1, y + 1, w - 2, h - 2, theme ? new Color(line) : new Color(line, 0.7));
+  }
+  if (look.progress && progress > 0) {
+    const ph = h * progress;
+    fillRound(ctx, x, y + h - ph, w, ph, Math.min(radius, ph / 2), paint(look.progress));
+  }
+  if (look.border) {
+    const width = look.dashed ? 1 : 1.5;
+    if (look.dashed) dashedRound(ctx, x, y, w, h, radius, paint(look.border), width);
+    else strokeRound(ctx, x, y, w, h, radius, paint(look.border), width);
+  }
+}
+
+function write(ctx, text, x, y, w, h, size, color, { bold = false, align = "left" } = {}) {
+  if (!text) return;
+  ctx.setFont(bold ? Font.boldSystemFont(size) : Font.systemFont(size));
+  ctx.setTextColor(new Color(color));
+  if (align === "center") ctx.setTextAlignedCenter();
+  else if (align === "right") ctx.setTextAlignedRight();
+  else ctx.setTextAlignedLeft();
+  ctx.drawTextInRect(text, new Rect(x, y, w, h));
+}
+
+function signed(hoursText) {
+  return Number(hoursText) > 0 ? `+${hoursText}` : hoursText;
+}
+
+// The month as a grid of tiles, Sunday first. Large adds day numbers, the
+// weekday letters over the columns and, inside each tile, a strip from 06:00
+// to 21:00 with the sessions worked marked on it.
+// Its height is fixed, whatever the rows: a month that spans six weeks gets
+// flatter tiles, not a taller widget.
+function monthImage(analysis, theme, width, height, { gap, radius, detailed }) {
+  const t = THEMES[theme], m = analysis.mosaic;
+  const rows = Math.ceil((m.lead + m.tiles.length) / 7);
+  const head = detailed ? 16 : 0;
+  const tileHeight = (height - head - (rows - 1) * gap) / rows;
+  const tileWidth = (width - 6 * gap) / 7;
+  const ctx = canvas(width, height);
+  if (detailed) {
+    ["S", "M", "T", "W", "T", "F", "S"].forEach((letter, col) =>
+      write(ctx, letter, col * (tileWidth + gap), 0, tileWidth, 14, 10, t.faint, { bold: true, align: "center" }));
+  }
+  const progress = todayProgress(analysis);
+  m.tiles.forEach((tile, i) => {
+    const col = (m.lead + i) % 7, row = Math.floor((m.lead + i) / 7);
+    const x = col * (tileWidth + gap), y = head + row * (tileHeight + gap);
+    const look = tileLook(tile, theme, detailed);
+    drawTile(ctx, x, y, tileWidth, tileHeight, radius, look, theme, detailed ? 0 : progress);
+    if (!detailed) return;
+    write(ctx, String(tile.day), x + 5, y + 3, tileWidth - 8, 13, 10, look.ink, { bold: true });
+    drawStrip(ctx, analysis, tile, theme, x + 4, y + tileHeight - 10, tileWidth - 8, 5);
+  });
+  return { image: ctx.getImage(), width, height };
+}
+
+// 06:00 to 21:00 across the tile; today runs from its clock-in to now, and on,
+// outlined, to the time it closes.
+function drawStrip(ctx, analysis, tile, theme, x, y, w, h) {
+  const t = THEMES[theme];
+  if (["off", "holiday", "unknown"].includes(tile.kind)) return;
+  if (tile.kind === "leave") {
+    fillRound(ctx, x, y, w, h, h / 2, new Color(t.hatch[1]));
+    return;
+  }
+  fillRound(ctx, x, y, w, h, h / 2, paint(t.track));
+  const at = minute => x + w * (Math.max(360, Math.min(1260, minute)) - 360) / 900;
+  const color = new Color(tile.kind === "short" ? t.short : t.tile);
+  for (const [start, end] of tile.spans) {
+    if (at(end) - at(start) > 0.5) fillRound(ctx, at(start), y, at(end) - at(start), h, h / 2, color);
+  }
+  const today = analysis.today;
+  if (tile.kind === "today" && today.entryMin != null && today.entryMin <= today.nowMin) {
+    fillRound(ctx, at(today.entryMin), y, at(today.nowMin) - at(today.entryMin), h, h / 2, color);
+    if (today.leaveMin != null && today.leaveMin > today.nowMin) {
+      strokeRound(ctx, at(today.nowMin), y, at(today.leaveMin) - at(today.nowMin), h, h / 2, color, 1);
+    }
+  }
+}
+
+// This week, a tall tile a day: the weekday, the date, what was worked and
+// what it came to. A day of another month is left blank: one page holds one month.
+function weekImage(analysis, theme, width, height) {
+  const t = THEMES[theme], gap = 6, m = analysis.mosaic;
+  const tileWidth = (width - 6 * gap) / 7;
+  const ctx = canvas(width, height);
+  const byDate = new Map(m.tiles.map(tile => [tile.date, tile]));
+  const progress = todayProgress(analysis);
+  m.week.forEach((iso, i) => {
+    const tile = byDate.get(iso) || { date: iso, kind: "unknown", balanceMinutes: 0 };
+    const look = tileLook(tile, theme);
+    const x = i * (tileWidth + gap);
+    drawTile(ctx, x, 0, tileWidth, height, 10, look, theme, progress);
+    const [value, tag] = weekLabels(tile, analysis);
+    write(ctx, WEEKDAYS[i], x, 6, tileWidth, 11, 9, look.ink, { bold: true, align: "center" });
+    write(ctx, String(Number(iso.slice(8))), x, 18, tileWidth, 20, 17, look.ink, { bold: true, align: "center" });
+    write(ctx, value, x, height - 32, tileWidth, 14, 11, look.ink, { bold: true, align: "center" });
+    write(ctx, tag, x, height - 17, tileWidth, 11, 8, look.ink, { bold: true, align: "center" });
+  });
+  return { image: ctx.getImage(), width, height };
+}
+
+function weekLabels(tile, analysis) {
+  const hoursOf = minutes => roundHours(minutes).toFixed(2);
+  switch (tile.kind) {
+    case "today": return [analysis.today.workedSoFar, `OF ${analysis.today.standard}`];
+    case "ahead": return [hoursOf(tile.standardMinutes), "AHEAD"];
+    case "holiday": return ["", "HOLIDAY"];
+    case "leave": return ["", "LEAVE"];
+    case "pending": return [hoursOf(tile.workedMinutes), "SYNCING"];
+    case "met": case "short": return [hoursOf(tile.workedMinutes + tile.creditedMinutes), signed(tile.balance)];
+    default: return ["", ""];
+  }
+}
+
+// The lock screen's week: seven tiles in a row, or round the edge of the circle.
+function lockWeekImage(analysis, width, height) {
+  const gap = 4, m = analysis.mosaic, tileWidth = (width - 6 * gap) / 7;
+  const ctx = canvas(width, height);
+  const byDate = new Map(m.tiles.map(tile => [tile.date, tile]));
+  const progress = todayProgress(analysis);
+  m.week.forEach((iso, i) => {
+    const tile = byDate.get(iso) || { kind: "unknown" };
+    drawTile(ctx, i * (tileWidth + gap), 0, tileWidth, height, 4, lockLook(tile.kind), null, progress);
+  });
+  return ctx.getImage();
+}
+
+function lockRingImage(analysis, size) {
+  const m = analysis.mosaic, ctx = canvas(size, size);
+  const byDate = new Map(m.tiles.map(tile => [tile.date, tile]));
+  const progress = todayProgress(analysis), centre = size / 2, radius = size / 2 - 8;
+  m.week.forEach((iso, i) => {
+    const tile = byDate.get(iso) || { kind: "unknown" };
+    const s = tile.kind === "today" ? 14 : 10, a = -Math.PI / 2 + i * 2 * Math.PI / 7;
+    drawTile(ctx, centre + radius * Math.cos(a) - s / 2, centre + radius * Math.sin(a) - s / 2, s, s, 3,
+             lockLook(tile.kind), null, progress);
+  });
+  return ctx.getImage();
+}
+
+function addLine(stack, text, size, color, bold = false) {
+  const line = stack.addText(text);
+  line.font = bold ? Font.boldSystemFont(size) : Font.systemFont(size);
+  line.textColor = new Color(color);
+  return line;
+}
+
+function createWidget(analysis, family, theme = widgetTheme()) {
+  const t = THEMES[theme];
   const widget = new ListWidget();
-  widget.backgroundColor = new Color("#1c1c1e");
+  const lock = family.startsWith("accessory");
+  if (!lock) widget.backgroundColor = new Color(t.background);
   widget.setPadding(12, 14, 12, 14);
+  // A cache saved by an older version of this script has no mosaic: it shows
+  // the figures alone until the next successful refresh.
+  const mosaic = analysis.mosaic && Array.isArray(analysis.mosaic.tiles) ? analysis.mosaic : null;
+
+  const live = `${analysis.live.balanceNum > 0 ? "+" : ""}${analysis.live.balance}`;
+  const liveColor = analysis.live.balanceNum >= 0 ? t.accent : t.short;
+  const banked = `${analysis.banked.balanceNum > 0 ? "+" : ""}${analysis.banked.balance}`;
+  const today = analysis.today;
+  const leave = today.leaveToClose ? `out ${today.leaveToClose}` : today.done ? "done for today" : "";
 
   // A cached answer is marked on every size, so it can never pass for now.
   const stale = staleLabel(analysis);
-  const staleColor = new Color("#ff9f0a");
   if (stale && family === "accessoryRectangular") {
     const s = widget.addText(`⚠ ${stale}`);
     s.font = Font.systemFont(11);
-  } else if (stale && family === "accessoryInline") {
-    // Inline shows a single line; a separate marker would push the number out,
-    // so the balance line itself carries the time below.
-  } else if (stale && family !== "accessoryCircular") {
-    // The round widget marks an old figure in its own label below.
-    const s = widget.addText(`⚠ ${stale} · ${staleReason(analysis)}`);
-    s.font = Font.systemFont(10);
-    s.textColor = staleColor;
+  } else if (stale && !lock) {
+    addLine(widget, `⚠ ${stale} · ${staleReason(analysis)}`, 10, "#FF9F0A");
     widget.addSpacer(2);
   }
 
-  const liveSign = analysis.live.balanceNum > 0 ? "+" : "";
-  const liveColor = analysis.live.balanceNum >= 0 ? new Color("#30d158") : new Color("#ff453a");
-
-  const bankedSign = analysis.banked.balanceNum > 0 ? "+" : "";
-  const bankedColor = analysis.banked.balanceNum >= 0 ? new Color("#30d158") : new Color("#ff453a");
-
   if (family === "accessoryCircular") {
-    // The round Lock Screen widget: the balance, and a mark if it is old.
+    // The week round the edge, the balance in the middle; ⚠ for an old figure.
+    if (mosaic) widget.backgroundImage = lockRingImage(analysis, 76);
     const label = widget.addText(stale ? "⚠" : "NOW");
-    label.font = Font.systemFont(9);
-    const value = widget.addText(`${liveSign}${analysis.live.balance}`);
+    label.font = Font.systemFont(8);
+    const value = widget.addText(live);
     value.font = Font.boldSystemFont(12);
     value.minimumScaleFactor = 0.5;
     return widget;
   }
 
-  if (family === "accessoryRectangular" || family === "accessoryInline") {
-    // Lock Screen Widget
-    const staleSuffix = stale && family === "accessoryInline" ? ` ⚠ ${stale}` : "";
-    const titleText = widget.addText(`Hilan: ${liveSign}${analysis.live.balance}${staleSuffix}`);
-    titleText.font = Font.boldSystemFont(14);
-    if (family === "accessoryRectangular") {
-      const line2 = widget.addText(`Today: ${analysis.today.workedSoFar}/${analysis.today.standard}`);
-      line2.font = Font.systemFont(12);
-      // Three lines fit; an old figure's marker takes one, and its leave time
-      // is old too.
-      if (analysis.today.leaveToClose && !stale) {
-        const line3 = widget.addText(`Leave: ${analysis.today.leaveToClose}`);
-        line3.font = Font.systemFont(11);
-      }
-    }
+  if (family === "accessoryInline") {
+    // Inline shows a single line; a separate marker would push the number out,
+    // so the balance line itself carries the time.
+    const title = widget.addText(`Hilan: ${live}${stale ? ` ⚠ ${stale}` : ""}`);
+    title.font = Font.boldSystemFont(14);
     return widget;
   }
 
-  if (family === "small") {
-    // Small Widget
-    const headerStack = widget.addStack();
-    headerStack.layoutHorizontally();
-    const title = headerStack.addText("HILAN");
-    title.font = Font.boldSystemFont(12);
-    title.textColor = new Color("#0a84ff");
-    headerStack.addSpacer();
-
-    widget.addSpacer(4);
-    const nowLabel = widget.addText("NOW");
-    nowLabel.font = Font.systemFont(10);
-    nowLabel.textColor = Color.gray();
-
-    const nowVal = widget.addText(`${liveSign}${analysis.live.balance}`);
-    nowVal.font = Font.boldSystemFont(26);
-    nowVal.textColor = liveColor;
-
-    widget.addSpacer(4);
-    const bankedRow = widget.addStack();
-    bankedRow.layoutHorizontally();
-    const bLabel = bankedRow.addText("BANKED ");
-    bLabel.font = Font.systemFont(11);
-    bLabel.textColor = Color.gray();
-    const bVal = bankedRow.addText(`${bankedSign}${analysis.banked.balance}`);
-    bVal.font = Font.boldSystemFont(11);
-    bVal.textColor = bankedColor;
-
-    widget.addSpacer(2);
-    const todayRow = widget.addStack();
-    todayRow.layoutHorizontally();
-    const tLabel = todayRow.addText("TODAY ");
-    tLabel.font = Font.systemFont(11);
-    tLabel.textColor = Color.gray();
-    const tVal = todayRow.addText(`${analysis.today.workedSoFar}/${analysis.today.standard}`);
-    tVal.font = Font.systemFont(11);
-    tVal.textColor = Color.white();
-
-    if (analysis.today.leaveToClose) {
-      widget.addSpacer(2);
-      const leaveText = widget.addText(`leave at ${analysis.today.leaveToClose}`);
-      leaveText.font = Font.systemFont(10);
-      leaveText.textColor = new Color("#ffd60a");
+  if (family === "accessoryRectangular") {
+    const title = widget.addText(`Hilan: ${live}`);
+    title.font = Font.boldSystemFont(14);
+    if (mosaic) {
+      widget.addSpacer(3);
+      const strip = widget.addImage(lockWeekImage(analysis, 150, 14));
+      strip.imageSize = new Size(150, 14);
+      widget.addSpacer(3);
     }
-
+    // Three lines fit; an old figure's marker takes one, and its leave time is old too.
+    const line = widget.addText(`${today.workedSoFar}/${today.standard}${today.leaveToClose && !stale ? ` · out ${today.leaveToClose}` : ""}`);
+    line.font = Font.systemFont(11);
     return widget;
   }
 
-  // Medium Widget (Default)
-  const topStack = widget.addStack();
-  topStack.layoutHorizontally();
-
-  const title = topStack.addText("Hilan Hours");
-  title.font = Font.boldSystemFont(13);
-  title.textColor = new Color("#0a84ff");
-  topStack.addSpacer();
-
-  if (analysis.syncDisplay) {
-    const syncText = topStack.addText(`Synced: ${analysis.syncDisplay}`);
-    syncText.font = Font.systemFont(10);
-    syncText.textColor = Color.gray();
-  }
-
-  widget.addSpacer(6);
-
-  // Main columns
-  const contentStack = widget.addStack();
-  contentStack.layoutHorizontally();
-
-  // Left Column: NOW & BANKED
-  const leftCol = contentStack.addStack();
-  leftCol.layoutVertically();
-
-  const nowStack = leftCol.addStack();
-  nowStack.layoutHorizontally();
-  const nowHead = nowStack.addText("NOW: ");
-  nowHead.font = Font.boldSystemFont(18);
-  nowHead.textColor = Color.white();
-  const nowVal = nowStack.addText(`${liveSign}${analysis.live.balance}`);
-  nowVal.font = Font.boldSystemFont(18);
-  nowVal.textColor = liveColor;
-
-  leftCol.addSpacer(2);
-  const bankedStack = leftCol.addStack();
-  bankedStack.layoutHorizontally();
-  const bHead = bankedStack.addText("BANKED: ");
-  bHead.font = Font.systemFont(13);
-  bHead.textColor = Color.gray();
-  const bVal = bankedStack.addText(`${bankedSign}${analysis.banked.balance}`);
-  bVal.font = Font.boldSystemFont(13);
-  bVal.textColor = bankedColor;
-
-  leftCol.addSpacer(2);
-  const settledText = leftCol.addText(`settled to ${dayMonth(analysis.settledThrough)}`);
-  settledText.font = Font.systemFont(10);
-  settledText.textColor = Color.gray();
-
-  contentStack.addSpacer();
-
-  // Right Column: TODAY & LEAVE
-  const rightCol = contentStack.addStack();
-  rightCol.layoutVertically();
-
-  const todayStack = rightCol.addStack();
-  todayStack.layoutHorizontally();
-  const todayHead = todayStack.addText("TODAY: ");
-  todayHead.font = Font.systemFont(13);
-  todayHead.textColor = Color.gray();
-  const todayVal = todayStack.addText(`${analysis.today.workedSoFar} of ${analysis.today.standard}`);
-  todayVal.font = Font.boldSystemFont(13);
-  todayVal.textColor = Color.white();
-
-  rightCol.addSpacer(2);
-  if (analysis.today.leaveToClose) {
-    const leaveStack = rightCol.addStack();
-    leaveStack.layoutHorizontally();
-    const lHead = leaveStack.addText("LEAVE: ");
-    lHead.font = Font.systemFont(13);
-    lHead.textColor = new Color("#ffd60a");
-    const lVal = leaveStack.addText(analysis.today.leaveToClose);
-    lVal.font = Font.boldSystemFont(13);
-    lVal.textColor = new Color("#ffd60a");
-  } else if (analysis.today.done) {
-    const doneText = rightCol.addText("Done for today");
-    doneText.font = Font.boldSystemFont(12);
-    doneText.textColor = new Color("#30d158");
-  } else {
-    const notInText = rightCol.addText(analysis.today.isOpen ? "Clocked in" : "Not clocked in");
-    notInText.font = Font.systemFont(11);
-    notInText.textColor = Color.gray();
-  }
-
-  rightCol.addSpacer(2);
-  const monthText = rightCol.addText(`Month left: ${analysis.monthTotals.remaining}`);
-  monthText.font = Font.systemFont(10);
-  monthText.textColor = Color.gray();
-
-  // Large and extra large widgets get the same content, with the time it was
-  // worked out, so a figure that iOS has not refreshed can be seen as such.
-  if (family === "large" || family === "extraLarge") {
-    widget.addSpacer();
-    const footer = widget.addText(analysis.computedAt ? `worked out at ${analysis.computedAt}` : "");
-    footer.font = Font.systemFont(10);
-    footer.textColor = Color.gray();
-  }
-
-  // Tap opens Hilan portal in Safari
+  // Tap opens the attendance page in Safari.
   widget.url = `${BASE_URL}${ATTENDANCE_PATH}?isOnSelf=true`;
 
+  if (family === "small") {
+    const head = widget.addStack();
+    head.layoutHorizontally();
+    const now = head.addStack();
+    now.layoutVertically();
+    addLine(now, "NOW", 9, t.muted, true);
+    addLine(now, live, 22, liveColor, true);
+    head.addSpacer();
+    addLine(head, MONTHS[analysis.month - 1].slice(0, 3).toUpperCase(), 10, t.muted, true);
+    widget.addSpacer(6);
+    if (mosaic) {
+      const { image, width, height } = monthImage(analysis, theme, 142, 64, { gap: 3, radius: 3, detailed: false });
+      widget.addImage(image).imageSize = new Size(width, height);
+    }
+    widget.addSpacer();
+    // An old figure's marker takes the footer's line: there is no room for both.
+    if (stale) return widget;
+    const foot = widget.addStack();
+    foot.layoutHorizontally();
+    addLine(foot, `${today.workedSoFar} / ${today.standard}`, 11, t.muted);
+    foot.addSpacer();
+    if (leave) addLine(foot, leave, 11, t.short, true);
+    return widget;
+  }
+
+  if (family === "medium") {
+    const head = widget.addStack();
+    head.layoutHorizontally();
+    addLine(head, "This week", 13, t.text, true);
+    if (mosaic) {
+      const [first, last] = [mosaic.week[0], mosaic.week[6]];
+      addLine(head, `  ${dayMonth(first)}–${dayMonth(last)}`, 13, t.muted);
+    }
+    head.addSpacer();
+    addLine(head, "now ", 13, t.muted);
+    addLine(head, live, 15, liveColor, true);
+    widget.addSpacer(8);
+    if (mosaic) {
+      const { image, width, height } = weekImage(analysis, theme, 332, 84);
+      widget.addImage(image).imageSize = new Size(width, height);
+    }
+    widget.addSpacer();
+    const foot = widget.addStack();
+    foot.layoutHorizontally();
+    addLine(foot, `banked ${banked} · `, 11, t.muted);
+    addLine(foot, `settled to ${dayMonth(analysis.settledThrough)}`, 11, t.muted);
+    foot.addSpacer();
+    if (leave && !stale) addLine(foot, leave, 11, t.short, true);
+    return widget;
+  }
+
+  // Large, and extra large on an iPad: the month with the hours of each day.
+  const head = widget.addStack();
+  head.layoutHorizontally();
+  const title = head.addStack();
+  title.layoutVertically();
+  addLine(title, MONTHS[analysis.month - 1], 17, t.text, true);
+  addLine(title, `banked ${banked} · ${analysis.monthTotals.remaining} left of ${analysis.monthTotals.standard}`, 11, t.muted);
+  head.addSpacer();
+  const now = head.addStack();
+  now.layoutVertically();
+  addLine(now, "NOW", 10, t.muted, true);
+  addLine(now, live, 24, liveColor, true);
+  widget.addSpacer(10);
+  if (mosaic) {
+    const { image, width, height } = monthImage(analysis, theme, 332, 230, { gap: 6, radius: 9, detailed: true });
+    widget.addImage(image).imageSize = new Size(width, height);
+    widget.addSpacer(4);
+    addLine(widget, "each strip runs 06:00 → 21:00", 10, t.faint);
+  }
+  widget.addSpacer();
+  const foot = widget.addStack();
+  foot.layoutHorizontally();
+  addLine(foot, `Today ${today.entry ? `${today.entry} → ` : ""}${today.workedSoFar} / ${today.standard}`, 12, t.text);
+  foot.addSpacer();
+  if (leave && !stale) addLine(foot, leave, 12, t.short, true);
+  if (analysis.computedAt) {
+    widget.addSpacer(2);
+    addLine(widget, `worked out at ${analysis.computedAt}`, 10, t.faint);
+  }
   return widget;
 }
 

@@ -16,6 +16,9 @@ the widget shows, and the sentence it gives Siri, with what Python computes:
   states that the rule would not, rows that disagree with each other, and a
   clock marker before, inside or past the month;
 - a page carrying two months' grids.
+
+The mosaic is compared too: every day's kind (the colour of its tile) and its
+balance, as Analysis.kind and DayCalc.balance give them.
 """
 import calendar as cal
 import json
@@ -63,6 +66,8 @@ for (const c of JSON.parse(fs.readFileSync(casesPath, 'utf-8'))) {
         today_worked: a.today.workedSoFar, today_required: a.today.standard,
         leave: a.today.leaveToClose, done: a.today.done,
         spoken: ctx.toSpoken(a),
+        tiles: a.mosaic.tiles.filter(t => t.listed)
+          .map(t => `${t.date}:${t.kind}:${t.balance}`).join(' '),
       });
     } catch (e) { out.push({ error: String(e && e.message || e) }); }
   }
@@ -85,12 +90,17 @@ def _period_fields(a) -> dict:
     }
 
 
+def _tiles(a) -> str:
+    """Every day the page has a row for, as the widget's mosaic colours it."""
+    return " ".join(f"{d.date.isoformat()}:{a.kind(d)}:{hrs(d.balance)}" for d in a.days)
+
+
 def python(report, when: datetime) -> dict:
     a = analyse([report], today=when.date(), now=when)
     f = a.forecast
     if f is None:                            # no row for today on the page
         return {
-            **_period_fields(a),
+            **_period_fields(a), "tiles": _tiles(a),
             "live_balance": hrs(a.live_balance),
             "today_worked": "0.00", "today_required": "0.00",
             "leave": None, "done": True, "spoken": spoken(a),
@@ -109,6 +119,7 @@ def python(report, when: datetime) -> dict:
                   if f.leave_to_close_today and not f.done_for_today else None),
         "done": f.done_for_today,
         "spoken": spoken(a),
+        "tiles": _tiles(a),
     }
 
 
