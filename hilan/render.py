@@ -500,7 +500,7 @@ def to_dict(analysis: Analysis) -> dict:
                 "date": d.date.isoformat(), "worked": hrs(d.worked),
                 "credited": hrs(d.credited), "standard": hrs(d.standard),
                 "balance": hrs(d.balance), "special": d.record.special,
-                "error": d.record.error,
+                "error": d.record.error, "kind": analysis.kind(d),
             }
             for d in analysis.days
         ],

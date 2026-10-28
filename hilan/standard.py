@@ -37,6 +37,11 @@ def is_election(special: str) -> bool:
     return ELECTION in special
 
 
+def is_holiday(special: str | None) -> bool:
+    """A label that makes a weekday a day off: חג, or election day."""
+    return bool(special) and (special == HOLIDAY or is_election(special))
+
+
 def daily_standard(day: date, special: str | None) -> timedelta:
     """Required hours for one day.
 
@@ -49,7 +54,7 @@ def daily_standard(day: date, special: str | None) -> timedelta:
     if weekday in (_FRIDAY, _SATURDAY):
         return timedelta(0)
     if special:
-        if special == HOLIDAY or is_election(special):
+        if is_holiday(special):
             return timedelta(0)
         if _is_erev(special):
             return EREV_DAY

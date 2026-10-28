@@ -103,6 +103,10 @@ class TestTheDay:
                datetime(2026, 10, 28, 12, 0))
         assert a.now.balance == timedelta(hours=4)
 
+    def test_its_tile_is_a_holiday_ahead_of_time(self):
+        a = at(october(sync="26/10/2026 10:15"), datetime(2026, 10, 26, 12, 0))
+        assert a.kind(next(d for d in a.days if d.date == ELECTION)) == "holiday"
+
     def test_hilans_own_figure_still_decides(self):
         """Where Hilan states a requirement for the day, it wins, and is said aloud."""
         stated = ([(BLANK, BLANK)], [_row(standard="9.00", symbol="")])

@@ -20,7 +20,7 @@ from typing import Sequence
 from . import clock
 from .parser import DayRecord, MonthReport
 from .text import SYMBOLS, english
-from .standard import daily_standard, hours
+from .standard import daily_standard, hours, is_holiday
 
 # Symbols that mean "this person was working".
 WORK_SYMBOLS = {"נוכחות", "נכח", "עבודה מהבית", "עבודה במילואים", "מפגש עובד מנהל"}
@@ -318,6 +318,29 @@ class Analysis:
         if f is None:
             return self.now.balance
         return self.now.balance + f.worked_so_far + f.credited - f.required
+
+    def kind(self, day: DayCalc) -> str:
+        """What sort of day this is, as the widget's tiles colour it.
+
+        A day not yet settled is "pending" rather than short: its punches may
+        not have arrived, and a tile must not show a deficit the balance does
+        not count.
+        """
+        if day.date > self.today:
+            if is_holiday(day.record.special):
+                return "holiday"
+            return "ahead" if day.standard > timedelta(0) else "off"
+        if day.date == self.today:
+            return "today"
+        if day.date > self.settled_through:
+            return "pending"
+        if day.worked == day.credited == day.standard == timedelta(0):
+            return "holiday" if is_holiday(day.record.special) else "off"
+        if day.balance < timedelta(0):
+            return "short"
+        if day.worked == timedelta(0) and day.credited > timedelta(0):
+            return "leave"
+        return "met"
 
     @property
     def year(self) -> int:
